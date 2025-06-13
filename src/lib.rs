@@ -1,5 +1,4 @@
-#![cfg_attr(feature = "nightly", feature(external_doc))]
-#![cfg_attr(feature = "nightly", doc(include = "../README.md"))]
+#![doc = include_str!("../README.md")]
 #![warn(rust_2018_idioms)]
 #![allow(elided_lifetimes_in_paths)]
 #![warn(missing_docs)]
@@ -30,9 +29,6 @@ pub mod rfc5321;
 pub mod rfc5322;
 pub mod types;
 pub mod xforward;
-
-#[cfg(feature = "python")]
-mod pymod;
 
 #[cfg(test)]
 mod tests;

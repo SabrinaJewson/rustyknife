@@ -18,8 +18,6 @@ codecov = { repository = "zerospam/rustyknife", service = "github" }
 [features]
 default = ["quoted-string-rfc2047"]
 quoted-string-rfc2047 = []
-python = ["memmap", "pyo3"]
-nightly = []
 fuzz = ["afl"]
 
 [lib]
@@ -27,15 +25,13 @@ crate-type = ["lib", "cdylib"]
 
 [dependencies]
 nom = "6.0"
-base64 = "0.13"
-idna = "0.2.0"
-serde = { version = "1.0", features = ["derive"], optional=true }
+base64 = "0.22.1"
+idna = "1.0.3"
+serde = { version = "1.0.219", features = ["derive"], optional=true }
 
-memmap = { version = "0.7.0", optional=true }
-pyo3 = { version = "0.13", features = ["extension-module"], optional=true }
-afl = { version = "0.8", optional=true }
-encoding_rs = "0.8.33"
-charset = "0.1.3"
+afl = { version = "0.15.19", optional=true }
+encoding_rs = "0.8.35"
+charset = "0.1.5"
 
 [[bin]]
 name = "fuzz_mailbox"
@@ -43,6 +39,3 @@ required-features = ["fuzz"]
 
 [profile.release]
 panic = "abort"
-
-[package.metadata.docs.rs]
-features = ["nightly"]
