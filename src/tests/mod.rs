@@ -1,4 +1,4 @@
-mod test_headersection;
-mod test_rfc2231;
-mod test_rfc5321;
-mod test_rfc5322;
+mod headersection;
+mod rfc2231;
+mod rfc5321;
+mod rfc5322;
