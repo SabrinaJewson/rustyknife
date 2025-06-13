@@ -2,17 +2,20 @@
 //!
 //! [XFORWARD]: http://www.postfix.org/XFORWARD_README.html
 
-use charset::decode_ascii;
-
-use nom::branch::alt;
-use nom::bytes::complete::{tag, tag_no_case};
-use nom::combinator::{opt, map};
-use nom::multi::{many1};
-use nom::sequence::{delimited, preceded, separated_pair};
-
-use crate::rfc5234::{crlf, wsp};
 use crate::rfc3461::xtext;
+use crate::rfc5234::crlf;
+use crate::rfc5234::wsp;
 use crate::util::*;
+use charset::decode_ascii;
+use nom::branch::alt;
+use nom::bytes::complete::tag;
+use nom::bytes::complete::tag_no_case;
+use nom::combinator::map;
+use nom::combinator::opt;
+use nom::multi::many1;
+use nom::sequence::delimited;
+use nom::sequence::preceded;
+use nom::sequence::separated_pair;
 
 /// XFORWARD parameter name and value.
 ///
@@ -21,13 +24,15 @@ use crate::util::*;
 pub struct Param(pub &'static str, pub Option<String>);
 
 fn command_name(input: &[u8]) -> NomResult<&'static str> {
-    alt((map(tag_no_case("addr"), |_| "addr"),
-         map(tag_no_case("helo"), |_| "helo"),
-         map(tag_no_case("ident"), |_| "ident"),
-         map(tag_no_case("name"), |_| "name"),
-         map(tag_no_case("port"), |_| "port"),
-         map(tag_no_case("proto"), |_| "proto"),
-         map(tag_no_case("source"), |_| "source")))(input)
+    alt((
+        map(tag_no_case("addr"), |_| "addr"),
+        map(tag_no_case("helo"), |_| "helo"),
+        map(tag_no_case("ident"), |_| "ident"),
+        map(tag_no_case("name"), |_| "name"),
+        map(tag_no_case("port"), |_| "port"),
+        map(tag_no_case("proto"), |_| "proto"),
+        map(tag_no_case("source"), |_| "source"),
+    ))(input)
 }
 
 fn unavailable(input: &[u8]) -> NomResult<Option<String>> {
@@ -39,8 +44,9 @@ fn value(input: &[u8]) -> NomResult<Option<String>> {
 }
 
 fn param(input: &[u8]) -> NomResult<Param> {
-    map(separated_pair(command_name, tag("="), value),
-        |(c, v)| Param(c, v))(input)
+    map(separated_pair(command_name, tag("="), value), |(c, v)| {
+        Param(c, v)
+    })(input)
 }
 
 /// Parse a XFORWARD b`"attr1=value attr2=value"` string.
@@ -52,8 +58,10 @@ fn param(input: &[u8]) -> NomResult<Param> {
 /// `[UNAVAILABLE]` is translated to `None`. No other validation is
 /// done.
 pub fn xforward_params(input: &[u8]) -> NomResult<Vec<Param>> {
-    fold_prefix0(preceded(opt(many1(wsp)), param),
-                 preceded(many1(wsp), param))(input)
+    fold_prefix0(
+        preceded(opt(many1(wsp)), param),
+        preceded(many1(wsp), param),
+    )(input)
 }
 
 pub fn command(input: &[u8]) -> NomResult<Vec<Param>> {

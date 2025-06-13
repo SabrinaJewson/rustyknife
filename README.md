@@ -1,5 +1,8 @@
 # rustyknife
 
+> This is a fork of the existing [`rustyknife`](https://github.com/jothan/rustyknife) library.
+> I’m not going to bother to contribute back, since I’ve formatted the entire codebase.
+
 [![crates.io](http://meritbadge.herokuapp.com/rustyknife)](https://crates.io/crates/rustyknife)
 [![Build Status](https://travis-ci.com/zerospam/rustyknife.svg?branch=master)](https://travis-ci.com/zerospam/rustyknife)
 [![codecov](https://codecov.io/gh/zerospam/rustyknife/branch/master/graph/badge.svg)](https://codecov.io/gh/zerospam/rustyknife)

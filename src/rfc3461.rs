@@ -2,25 +2,28 @@
 //!
 //! [SMTP DSN]: https://tools.ietf.org/html/rfc3461
 
+use crate::rfc5322::atom;
+use crate::util::*;
+use charset::decode_ascii;
+use nom::branch::alt;
+use nom::bytes::complete::tag;
+use nom::bytes::complete::tag_no_case;
+use nom::bytes::complete::take;
+use nom::character::is_hex_digit;
+use nom::combinator::map;
+use nom::combinator::map_res;
+use nom::combinator::verify;
+use nom::multi::many0;
+use nom::sequence::preceded;
+use nom::sequence::separated_pair;
 use std::borrow::Cow;
 use std::str;
 
-use crate::util::*;
-
-use charset::decode_ascii;
-
-use nom::branch::alt;
-use nom::bytes::complete::{take, tag, tag_no_case};
-use nom::character::is_hex_digit;
-use nom::combinator::{map, map_res, verify};
-use nom::multi::many0;
-use nom::sequence::{preceded, separated_pair};
-
-use crate::rfc5322::atom;
-
 pub(crate) fn hexpair(input: &[u8]) -> NomResult<u8> {
-    map_res(verify(take(2usize), |c: &[u8]| c.iter().cloned().all(is_hex_digit)),
-            |x| u8::from_str_radix(str::from_utf8(x).unwrap(), 16))(input)
+    map_res(
+        verify(take(2usize), |c: &[u8]| c.iter().cloned().all(is_hex_digit)),
+        |x| u8::from_str_radix(str::from_utf8(x).unwrap(), 16),
+    )(input)
 }
 
 fn hexchar(input: &[u8]) -> NomResult<u8> {
@@ -28,7 +31,10 @@ fn hexchar(input: &[u8]) -> NomResult<u8> {
 }
 
 fn xchar(input: &[u8]) -> NomResult<u8> {
-    take1_filter(|c| match c { 33..=42 | 44..=60 | 62..=126 => true, _ => false})(input)
+    take1_filter(|c| match c {
+        33..=42 | 44..=60 | 62..=126 => true,
+        _ => false,
+    })(input)
 }
 
 pub(crate) fn xtext(input: &[u8]) -> NomResult<Vec<u8>> {
@@ -37,7 +43,10 @@ pub(crate) fn xtext(input: &[u8]) -> NomResult<Vec<u8>> {
 
 fn _printable_xtext(input: &[u8]) -> NomResult<Vec<u8>> {
     verify(xtext, |xtext: &[u8]| {
-        xtext.iter().all(|c| match c { 9..=13 | 32..=126 => true, _ => false})
+        xtext.iter().all(|c| match c {
+            9..=13 | 32..=126 => true,
+            _ => false,
+        })
     })(input)
 }
 
@@ -53,8 +62,10 @@ fn _printable_xtext(input: &[u8]) -> NomResult<Vec<u8>> {
 /// assert_eq!(split, ("rfc822".into(), "bob@example.org".into()));
 /// ```
 pub fn orcpt_address(input: &[u8]) -> NomResult<(Cow<str>, Cow<str>)> {
-    map(separated_pair(atom::<crate::behaviour::Legacy>, tag(";"), _printable_xtext),
-        |(a, b)| (decode_ascii(a), Cow::Owned(decode_ascii(&b).into_owned())))(input)
+    map(
+        separated_pair(atom::<crate::behaviour::Legacy>, tag(";"), _printable_xtext),
+        |(a, b)| (decode_ascii(a), Cow::Owned(decode_ascii(&b).into_owned())),
+    )(input)
 }
 
 /// The DSN return type desired by the sender.
@@ -97,26 +108,31 @@ type Param<'a> = (&'a str, Option<&'a str>);
 /// assert_eq!(params, DSNMailParams{ envid: None, ret: Some(DSNRet::Hdrs) });
 /// assert_eq!(other, [("OTHER", None)]);
 /// ```
-pub fn dsn_mail_params<'a>(input: &[Param<'a>]) -> Result<(DSNMailParams, Vec<Param<'a>>), &'static str>
-{
+pub fn dsn_mail_params<'a>(
+    input: &[Param<'a>],
+) -> Result<(DSNMailParams, Vec<Param<'a>>), &'static str> {
     let mut out = Vec::new();
-    let mut envid_val : Option<String> = None;
-    let mut ret_val : Option<DSNRet> = None;
+    let mut envid_val: Option<String> = None;
+    let mut ret_val: Option<DSNRet> = None;
 
     for (name, value) in input {
         match (name.to_lowercase().as_str(), value) {
             ("ret", Some(value)) => {
-                if ret_val.is_some() { return Err("Duplicate RET"); }
+                if ret_val.is_some() {
+                    return Err("Duplicate RET");
+                }
 
                 ret_val = match value.to_lowercase().as_str() {
                     "full" => Some(DSNRet::Full),
                     "hdrs" => Some(DSNRet::Hdrs),
-                    _ => return Err("Invalid RET")
+                    _ => return Err("Invalid RET"),
                 }
-            },
+            }
 
             ("envid", Some(value)) => {
-                if envid_val.is_some() { return Err("Duplicate ENVID"); }
+                if envid_val.is_some() {
+                    return Err("Duplicate ENVID");
+                }
                 let value = value.as_bytes();
                 if value.len() > 100 {
                     return Err("ENVID over 100 bytes");
@@ -126,16 +142,20 @@ pub fn dsn_mail_params<'a>(input: &[Param<'a>]) -> Result<(DSNMailParams, Vec<Pa
                 } else {
                     return Err("Invalid ENVID");
                 }
-            },
-            ("ret", None) => { return Err("RET without value") },
-            ("envid", None) => { return Err("ENVID without value") },
-            _ => {
-                out.push((*name, *value))
             }
+            ("ret", None) => return Err("RET without value"),
+            ("envid", None) => return Err("ENVID without value"),
+            _ => out.push((*name, *value)),
         }
     }
 
-    Ok((DSNMailParams{envid: envid_val, ret: ret_val}, out))
+    Ok((
+        DSNMailParams {
+            envid: envid_val,
+            ret: ret_val,
+        },
+        out,
+    ))
 }
 
 pub struct Notify {

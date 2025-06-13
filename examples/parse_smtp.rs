@@ -1,12 +1,11 @@
+use rustyknife::behaviour::Intl;
+use rustyknife::rfc5321::command;
 use std::env;
 use std::os::unix::ffi::OsStrExt;
 
-use rustyknife::behaviour::Intl;
-use rustyknife::rfc5321::command;
-
 fn main() -> Result<(), String> {
     // Interpret each separate argument as a line ending in CRLF.
-    let input : Vec<u8> = env::args_os().skip(1).fold(Vec::new(), |mut acc, x| {
+    let input: Vec<u8> = env::args_os().skip(1).fold(Vec::new(), |mut acc, x| {
         acc.extend(x.as_bytes());
         acc.extend(b"\r\n");
         acc
@@ -14,7 +13,7 @@ fn main() -> Result<(), String> {
 
     println!("input: {:?}\n", String::from_utf8_lossy(&input));
 
-    let mut rem : &[u8] = &input;
+    let mut rem: &[u8] = &input;
     while !rem.is_empty() {
         let (res, parsed) = command::<Intl>(rem).map_err(|e| format!("{:?}", e))?;
 
@@ -22,7 +21,6 @@ fn main() -> Result<(), String> {
         println!("{:?}", parsed);
         println!("remainder: {:?}\n", String::from_utf8_lossy(rem));
     }
-
 
     Ok(())
 }

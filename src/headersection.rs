@@ -6,31 +6,39 @@
 //!
 //! [RFC 5322]: https://tools.ietf.org/html/rfc5322
 
+use crate::util::*;
+use nom::branch::alt;
+use nom::bytes::streaming::tag;
+use nom::bytes::streaming::take_until;
+use nom::bytes::streaming::take_while1;
+use nom::combinator::map;
+use nom::combinator::map_opt;
+use nom::combinator::opt;
+use nom::combinator::recognize;
+use nom::multi::many0;
+use nom::multi::many1;
+use nom::sequence::pair;
+use nom::sequence::separated_pair;
+use nom::sequence::terminated;
 use std::borrow::Cow;
 use std::str;
 
-use nom::branch::alt;
-use nom::bytes::streaming::{tag, take_while1, take_until};
-use nom::combinator::{opt, map, map_opt, recognize};
-use nom::multi::{many0, many1};
-use nom::sequence::{pair, terminated, separated_pair};
-
-use crate::util::*;
-
 fn fws(input: &[u8]) -> NomResult<Cow<str>> {
     //CRLF is "semantically invisible"
-    map(pair(opt(terminated(recognize_many0(wsp), crlf)),
-             recognize_many1(wsp)),
-        |(a, b)| {
-            match a {
-                Some(a) => {
-                    let mut out = String::from(str::from_utf8(a).unwrap());
-                    out.push_str(str::from_utf8(b).unwrap());
-                    Cow::from(out)
-                },
-                None => Cow::from(str::from_utf8(b).unwrap())
+    map(
+        pair(
+            opt(terminated(recognize_many0(wsp), crlf)),
+            recognize_many1(wsp),
+        ),
+        |(a, b)| match a {
+            Some(a) => {
+                let mut out = String::from(str::from_utf8(a).unwrap());
+                out.push_str(str::from_utf8(b).unwrap());
+                Cow::from(out)
             }
-        })(input)
+            None => Cow::from(str::from_utf8(b).unwrap()),
+        },
+    )(input)
 }
 
 fn ofws(input: &[u8]) -> NomResult<Cow<str>> {
@@ -65,29 +73,37 @@ fn crlf(input: &[u8]) -> NomResult<&[u8]> {
 /// - The [`Err`] variant is returned when the the first line of a header
 /// does not contain a colon or contains 8bit bytes on the left hand
 /// side of the colon.
-pub type HeaderField<'a> = Result<(&'a[u8], &'a[u8]), &'a[u8]>;
+pub type HeaderField<'a> = Result<(&'a [u8], &'a [u8]), &'a [u8]>;
 
 fn field_name(input: &[u8]) -> NomResult<&[u8]> {
-    take_while1(|c| match c {33..=57 | 59..=126 => true, _ => false})(input)
+    take_while1(|c| match c {
+        33..=57 | 59..=126 => true,
+        _ => false,
+    })(input)
 }
 
 fn until_crlf(input: &[u8]) -> NomResult<&[u8]> {
-    map_opt(take_until("\r\n"),
-            |i: &[u8]| if !i.is_empty() {
-                Some(i)
-            } else {
-                None
-            })(input)
+    map_opt(take_until("\r\n"), |i: &[u8]| {
+        if !i.is_empty() {
+            Some(i)
+        } else {
+            None
+        }
+    })(input)
 }
 
 fn unstructured(input: &[u8]) -> NomResult<&[u8]> {
     recognize(pair(
         many0(pair(ofws, alt((recognize(many1(vchar)), until_crlf)))),
-        many0(wsp)))(input)
+        many0(wsp),
+    ))(input)
 }
 
 fn field(input: &[u8]) -> NomResult<HeaderField> {
-    map(terminated(separated_pair(field_name, tag(":"), unstructured), crlf), Ok)(input)
+    map(
+        terminated(separated_pair(field_name, tag(":"), unstructured), crlf),
+        Ok,
+    )(input)
 }
 
 // Extension to be able to walk through crap.
@@ -100,12 +116,10 @@ fn invalid_field(input: &[u8]) -> NomResult<HeaderField> {
 /// Returns the remaining input (the message body) and a vector of
 /// [HeaderField] on success.
 pub fn header_section(input: &[u8]) -> NomResult<Vec<HeaderField>> {
-    terminated(many0(alt((field, invalid_field))),
-               opt(crlf))(input)
+    terminated(many0(alt((field, invalid_field))), opt(crlf))(input)
 }
 
 /// Parse a single header
 pub fn header(input: &[u8]) -> NomResult<Option<HeaderField>> {
-    alt((map(alt((field, invalid_field)), Some),
-         map(crlf, |_| None)))(input)
+    alt((map(alt((field, invalid_field)), Some), map(crlf, |_| None)))(input)
 }

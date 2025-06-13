@@ -2,26 +2,30 @@
 //!
 //! [Header extensions for non-ASCII text]: https://tools.ietf.org/html/rfc2047
 
-
-use std::borrow::Cow;
-
-use encoding_rs::{Encoding, UTF_8}; // TODO: was ASCII
-
-use nom::branch::alt;
-use nom::bytes::complete::{tag, take_while1};
-use nom::combinator::{map, opt};
-use nom::multi::many0;
-use nom::sequence::{delimited, preceded, terminated, tuple};
-
-use crate::util::*;
 use crate::rfc3461::hexpair;
+use crate::util::*;
+use encoding_rs::{Encoding, UTF_8}; // TODO: was ASCII
+use nom::branch::alt;
+use nom::bytes::complete::tag;
+use nom::bytes::complete::take_while1;
+use nom::combinator::map;
+use nom::combinator::opt;
+use nom::multi::many0;
+use nom::sequence::delimited;
+use nom::sequence::preceded;
+use nom::sequence::terminated;
+use nom::sequence::tuple;
+use std::borrow::Cow;
 
 fn token(input: &[u8]) -> NomResult<&[u8]> {
     take_while1(|c| (33..=126).contains(&c) && !b"()<>@,;:\\\"/[]?.=".contains(&c))(input)
 }
 
 fn encoded_text(input: &[u8]) -> NomResult<&[u8]> {
-    take_while1(|c| match c {33..=62 | 64..=126 => true, _ => false})(input)
+    take_while1(|c| match c {
+        33..=62 | 64..=126 => true,
+        _ => false,
+    })(input)
 }
 
 fn _qp_encoded_text(input: &[u8]) -> NomResult<Vec<u8>> {
@@ -33,14 +37,12 @@ fn _qp_encoded_text(input: &[u8]) -> NomResult<Vec<u8>> {
 }
 
 // Decode the modified quoted-printable as defined by this RFC.
-fn decode_qp(input: &[u8]) -> Option<Vec<u8>>
-{
+fn decode_qp(input: &[u8]) -> Option<Vec<u8>> {
     exact!(input, _qp_encoded_text).ok().map(|(_, o)| o)
 }
 
 // Undoes the quoted-printable or base64 encoding.
-fn decode_text(encoding: &[u8], text: &[u8]) -> Option<Vec<u8>>
-{
+fn decode_text(encoding: &[u8], text: &[u8]) -> Option<Vec<u8>> {
     match &encoding.to_ascii_lowercase()[..] {
         b"q" => decode_qp(text),
         b"b" => base64::decode(text).ok(),
@@ -49,18 +51,28 @@ fn decode_text(encoding: &[u8], text: &[u8]) -> Option<Vec<u8>>
 }
 
 fn _encoded_word(input: &[u8]) -> NomResult<(Cow<str>, Vec<u8>)> {
-    map(tuple((preceded(tag("=?"), token),
-               opt(preceded(tag("*"), token)),
-               delimited(tag("?"), token, tag("?")),
-               terminated(encoded_text, tag("?=")))),
+    map(
+        tuple((
+            preceded(tag("=?"), token),
+            opt(preceded(tag("*"), token)),
+            delimited(tag("?"), token, tag("?")),
+            terminated(encoded_text, tag("?=")),
+        )),
         |(charset, _lang, encoding, text)| {
-            (charset::decode_ascii(charset), decode_text(encoding, text).unwrap_or_else(|| text.to_vec()))
-        })(input)
+            (
+                charset::decode_ascii(charset),
+                decode_text(encoding, text).unwrap_or_else(|| text.to_vec()),
+            )
+        },
+    )(input)
 }
 
-fn decode_charset((charset, bytes): (Cow<str>, Vec<u8>)) -> String
-{
-    Encoding::for_label(charset.as_bytes()).unwrap_or(UTF_8).decode_without_bom_handling(&bytes).0.to_string()
+fn decode_charset((charset, bytes): (Cow<str>, Vec<u8>)) -> String {
+    Encoding::for_label(charset.as_bytes())
+        .unwrap_or(UTF_8)
+        .decode_without_bom_handling(&bytes)
+        .0
+        .to_string()
 }
 
 /// Decode an encoded word.

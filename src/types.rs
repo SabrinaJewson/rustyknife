@@ -9,17 +9,17 @@
 //! Structs such as [`types::Domain`] and [`types::QuotedString`] are
 //! newtypes around [`String`] to make sure they can only be constructed
 //! from valid values.
-use std::fmt::{self, Display};
-
-use std::net::IpAddr;
-
-#[cfg(feature = "serde")]
-use serde::{Serialize, Deserialize};
-
 use crate::behaviour::Intl;
 use crate::rfc5321 as smtp;
 use crate::rfc5322 as imf;
 use crate::util::*;
+#[cfg(feature = "serde")]
+use serde::Deserialize;
+#[cfg(feature = "serde")]
+use serde::Serialize;
+use std::fmt::Display;
+use std::fmt::{self};
+use std::net::IpAddr;
 
 /// A domain name such as used by DNS.
 #[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -85,7 +85,7 @@ impl QuotedString {
     ///
     /// No attempt is made to reencode values outside the ASCII range.
     pub fn quoted(&self) -> String {
-        let mut out = String::with_capacity(self.len()+2);
+        let mut out = String::with_capacity(self.len() + 2);
         out.push('"');
 
         for c in self.chars() {
@@ -94,7 +94,7 @@ impl QuotedString {
                     out.push('\\');
                     out.push(c);
                 }
-                _ => out.push(c)
+                _ => out.push(c),
             }
         }
         out.push('"');
@@ -228,7 +228,6 @@ impl AddressLiteral {
     nom_from_imf!(imf::domain_literal::<Intl>);
 }
 
-
 impl Display for AddressLiteral {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -245,7 +244,7 @@ impl Display for AddressLiteral {
 /// A valid email address.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "serde", serde(try_from="&str", into="String"))]
+#[cfg_attr(feature = "serde", serde(try_from = "&str", into = "String"))]
 pub struct Mailbox(pub(crate) LocalPart, pub(crate) DomainPart);
 
 impl Mailbox {

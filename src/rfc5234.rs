@@ -1,8 +1,7 @@
+use crate::util::*;
 use nom::branch::alt;
 use nom::bytes::complete::tag;
 use nom::combinator::map;
-
-use crate::util::*;
 
 fn sp(input: &[u8]) -> NomResult<&[u8]> {
     tag(" ")(input)

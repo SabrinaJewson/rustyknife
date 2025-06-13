@@ -1,21 +1,43 @@
+use crate::behaviour::Intl;
+use crate::behaviour::Legacy;
+use crate::headersection::header_section;
+use crate::rfc2231::content_disposition;
+use crate::rfc2231::content_transfer_encoding;
+use crate::rfc2231::content_type;
+use crate::rfc3461::dsn_mail_params;
+use crate::rfc3461::orcpt_address;
+use crate::rfc3461::DSNMailParams;
+use crate::rfc3461::DSNRet;
+use crate::rfc5321::mail_command;
+use crate::rfc5321::rcpt_command;
+use crate::rfc5321::validate_address;
+use crate::rfc5321::ForwardPath;
+use crate::rfc5321::Param as ESMTPParam;
+use crate::rfc5321::ReversePath;
+use crate::rfc5322::from;
+use crate::rfc5322::reply_to;
+use crate::rfc5322::sender;
+use crate::rfc5322::unstructured;
+use crate::rfc5322::Address;
+use crate::rfc5322::Group;
+use crate::rfc5322::Mailbox;
+use crate::util::NomResult;
+use crate::xforward::xforward_params;
+use crate::xforward::Param as XFORWARDParam;
+use memmap::Mmap;
+use pyo3::exceptions::PyValueError;
+use pyo3::prelude::*;
+use pyo3::types::PyBytes;
+use pyo3::types::PyDict;
+use pyo3::types::PyTuple;
+use pyo3::PyErr;
+use pyo3::PyObject;
+use pyo3::PyResult;
+use pyo3::Python;
+use pyo3::ToPyObject;
+use pyo3::{self};
 use std::fmt::Debug;
 use std::fs::File;
-
-use crate::behaviour::{Legacy, Intl};
-use crate::rfc2231::{content_type, content_disposition, content_transfer_encoding};
-use crate::rfc3461::{orcpt_address, dsn_mail_params, DSNMailParams, DSNRet};
-use crate::rfc5321::{Param as ESMTPParam, mail_command, rcpt_command, validate_address, ForwardPath, ReversePath};
-use crate::rfc5322::{Address, Mailbox, Group, from, sender, reply_to, unstructured};
-use crate::headersection::{header_section};
-use crate::xforward::{Param as XFORWARDParam, xforward_params};
-use crate::util::NomResult;
-
-use memmap::Mmap;
-
-use pyo3::prelude::*;
-use pyo3::{self, Python, PyResult, PyObject, ToPyObject, PyErr};
-use pyo3::types::{PyBytes, PyDict, PyTuple};
-use pyo3::exceptions::PyValueError;
 
 impl IntoPy<PyObject> for Address {
     fn into_py(self, py: Python) -> PyObject {
@@ -33,21 +55,33 @@ impl IntoPy<PyObject> for Group {
 }
 impl IntoPy<PyObject> for Mailbox {
     fn into_py(self, py: Python) -> PyObject {
-        PyTuple::new(py, &[self.dname.to_object(py), self.address.to_string().to_object(py)]).to_object(py)
+        PyTuple::new(
+            py,
+            &[
+                self.dname.to_object(py),
+                self.address.to_string().to_object(py),
+            ],
+        )
+        .to_object(py)
     }
 }
 
 impl IntoPy<PyObject> for XFORWARDParam {
     fn into_py(self, py: Python) -> PyObject {
-        PyTuple::new(py, &[self.0.to_object(py),
-                           self.1.to_object(py)]).to_object(py)
+        PyTuple::new(py, &[self.0.to_object(py), self.1.to_object(py)]).to_object(py)
     }
 }
 
 impl IntoPy<PyObject> for ESMTPParam {
     fn into_py(self, py: Python) -> PyObject {
-        PyTuple::new(py, &[self.0.to_object(py),
-                           self.1.as_ref().map(|v| &v.0).to_object(py)]).to_object(py)
+        PyTuple::new(
+            py,
+            &[
+                self.0.to_object(py),
+                self.1.as_ref().map(|v| &v.0).to_object(py),
+            ],
+        )
+        .to_object(py)
     }
 }
 
@@ -56,11 +90,15 @@ impl IntoPy<PyObject> for DSNMailParams {
         let out = PyDict::new(py);
 
         out.set_item("envid", self.envid.clone()).unwrap();
-        out.set_item("ret", match self.ret {
-            Some(DSNRet::Hdrs) => Some("HDRS"),
-            Some(DSNRet::Full) => Some("FULL"),
-            None => None,
-        }).unwrap();
+        out.set_item(
+            "ret",
+            match self.ret {
+                Some(DSNRet::Hdrs) => Some("HDRS"),
+                Some(DSNRet::Full) => Some("FULL"),
+                None => None,
+            },
+        )
+        .unwrap();
         out.to_object(py)
     }
 }
@@ -84,7 +122,7 @@ impl IntoPy<PyObject> for ReversePath {
     }
 }
 
-fn convert_result<O, E: Debug> (input: NomResult<O, E>, match_all: bool) -> PyResult<O> {
+fn convert_result<O, E: Debug>(input: NomResult<O, E>, match_all: bool) -> PyResult<O> {
     match input {
         Ok((rem, out)) => {
             if match_all && !rem.is_empty() {
@@ -102,12 +140,13 @@ fn header_section_slice(py: Python, input: &[u8]) -> PyResult<PyObject> {
         .map_err(|err| PyErr::new::<PyValueError, _>(format!("{:?}.", err)))?;
 
     let header_end = input.len().checked_sub(rem.len()).unwrap();
-    let headers : Vec<_> = out.into_iter().map(|h| {
-        match h {
+    let headers: Vec<_> = out
+        .into_iter()
+        .map(|h| match h {
             Ok((name, value)) => (PyBytes::new(py, name), PyBytes::new(py, value)).to_object(py),
             Err(invalid) => (py.None(), PyBytes::new(py, invalid)).to_object(py),
-        }
-    }).collect();
+        })
+        .collect();
 
     Ok((headers, header_end).to_object(py))
 }
@@ -166,13 +205,21 @@ fn rustyknife(_py: Python, m: &PyModule) -> PyResult<()> {
     /// orcpt_address(input)
     #[pyfn(m, "orcpt_address")]
     fn py_orcpt_address(input: &str) -> PyResult<(String, String)> {
-        convert_result(orcpt_address(input.as_bytes()).map(|(rem, a)| (rem, (a.0.into(), a.1.into()))), true)
+        convert_result(
+            orcpt_address(input.as_bytes()).map(|(rem, a)| (rem, (a.0.into(), a.1.into()))),
+            true,
+        )
     }
 
     /// dsn_mail_params(input)
     #[pyfn(m, "dsn_mail_params")]
-    fn py_dsn_mail_params(py2: Python, input: Vec<(&str, Option<&str>)>) -> PyResult<(PyObject, PyObject)> {
-        dsn_mail_params(&input).map(|(parsed, rem)| (parsed.into_py(py2), rem.to_object(py2))).map_err(PyErr::new::<PyValueError, _>)
+    fn py_dsn_mail_params(
+        py2: Python,
+        input: Vec<(&str, Option<&str>)>,
+    ) -> PyResult<(PyObject, PyObject)> {
+        dsn_mail_params(&input)
+            .map(|(parsed, rem)| (parsed.into_py(py2), rem.to_object(py2)))
+            .map_err(PyErr::new::<PyValueError, _>)
     }
 
     /// mail_command(input)
@@ -183,8 +230,7 @@ fn rustyknife(_py: Python, m: &PyModule) -> PyResult<()> {
     /// :type input: bytes
     /// :return: (address, [(param, param_value), ...])
     #[pyfn(m, "mail_command")]
-    pub fn py_mail_command(input: &PyBytes) -> PyResult<(ReversePath, Vec<ESMTPParam>)>
-    {
+    pub fn py_mail_command(input: &PyBytes) -> PyResult<(ReversePath, Vec<ESMTPParam>)> {
         convert_result(mail_command::<Legacy>(input.as_bytes()), true)
     }
 
@@ -196,8 +242,7 @@ fn rustyknife(_py: Python, m: &PyModule) -> PyResult<()> {
     /// :type input: bytes
     /// :return: (address, [(param, param_value), ...])
     #[pyfn(m, "rcpt_command")]
-    pub fn py_rcpt_command(input: &PyBytes) -> PyResult<(ForwardPath, Vec<ESMTPParam>)>
-    {
+    pub fn py_rcpt_command(input: &PyBytes) -> PyResult<(ForwardPath, Vec<ESMTPParam>)> {
         convert_result(rcpt_command::<Legacy>(input.as_bytes()), true)
     }
 
@@ -207,8 +252,7 @@ fn rustyknife(_py: Python, m: &PyModule) -> PyResult<()> {
     /// :type address: str
     /// :rtype: bool
     #[pyfn(m, "validate_address")]
-    pub fn py_validate_address(input: &str) -> bool
-    {
+    pub fn py_validate_address(input: &str) -> bool {
         validate_address::<Legacy>(input.as_bytes())
     }
 
@@ -228,15 +272,19 @@ fn rustyknife(_py: Python, m: &PyModule) -> PyResult<()> {
     }
 
     /// content_type(input, all=False)
-    #[pyfn(m, "content_type", input, all=false)]
+    #[pyfn(m, "content_type", input, all = false)]
     fn py_content_type(input: &PyBytes, all: bool) -> PyResult<(String, Vec<(String, String)>)> {
         convert_result(content_type(input.as_bytes()), all)
     }
 
     /// content_disposition(input, all=False)
-    #[pyfn(m, "content_disposition", input, all=false)]
-    fn py_content_disposition(input: &PyBytes, all: bool) -> PyResult<(String, Vec<(String, String)>)> {
-        convert_result(content_disposition(input.as_bytes()), all).map(|(cd, params)| (cd.to_string().to_lowercase(), params))
+    #[pyfn(m, "content_disposition", input, all = false)]
+    fn py_content_disposition(
+        input: &PyBytes,
+        all: bool,
+    ) -> PyResult<(String, Vec<(String, String)>)> {
+        convert_result(content_disposition(input.as_bytes()), all)
+            .map(|(cd, params)| (cd.to_string().to_lowercase(), params))
     }
 
     /// content_transfer_encoding(input, all=False)
@@ -251,9 +299,10 @@ fn rustyknife(_py: Python, m: &PyModule) -> PyResult<()> {
     /// :return: Validated Content-Transfer-Encoding
     /// :rtype: str
     ///
-    #[pyfn(m, "content_transfer_encoding", input, all=false)]
+    #[pyfn(m, "content_transfer_encoding", input, all = false)]
     fn py_content_transfer_encoding(input: &PyBytes, all: bool) -> PyResult<String> {
-        convert_result(content_transfer_encoding(input.as_bytes()), all).map(|cte| cte.to_string().to_lowercase())
+        convert_result(content_transfer_encoding(input.as_bytes()), all)
+            .map(|cte| cte.to_string().to_lowercase())
     }
 
     Ok(())
