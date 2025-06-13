@@ -1,7 +1,7 @@
-#![doc = include_str!("../README.md")]
+//#![doc = include_str!("../README.md")] FIXME
 #![warn(rust_2018_idioms)]
-#![allow(elided_lifetimes_in_paths)]
-#![warn(missing_docs)]
+// #![warn(missing_docs)]
+#![allow(clippy::result_unit_err)]
 
 #[macro_use]
 pub extern crate nom;

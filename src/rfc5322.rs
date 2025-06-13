@@ -32,84 +32,67 @@ use std::str;
 
 #[allow(missing_docs)] // Mostly internal
 pub trait UTF8Policy {
-    fn vchar(input: &[u8]) -> NomResult<char>;
-    fn ctext(input: &[u8]) -> NomResult<char>;
-    fn atext(input: &[u8]) -> NomResult<char>;
-    fn qtext(input: &[u8]) -> NomResult<char>;
-    fn dtext(input: &[u8]) -> NomResult<char>;
+    fn vchar(input: &[u8]) -> NomResult<'_, char>;
+    fn ctext(input: &[u8]) -> NomResult<'_, char>;
+    fn atext(input: &[u8]) -> NomResult<'_, char>;
+    fn qtext(input: &[u8]) -> NomResult<'_, char>;
+    fn dtext(input: &[u8]) -> NomResult<'_, char>;
 }
 
 impl UTF8Policy for Legacy {
-    fn vchar(input: &[u8]) -> NomResult<char> {
+    fn vchar(input: &[u8]) -> NomResult<'_, char> {
         crate::rfc5234::vchar(input)
     }
 
-    fn ctext(input: &[u8]) -> NomResult<char> {
+    fn ctext(input: &[u8]) -> NomResult<'_, char> {
         map(
-            take1_filter(|c| match c {
-                33..=39 | 42..=91 | 93..=126 => true,
-                _ => false,
-            }),
+            take1_filter(|c| matches!(c, 33..=39 | 42..=91 | 93..=126)),
             char::from,
         )(input)
     }
 
-    fn atext(input: &[u8]) -> NomResult<char> {
+    fn atext(input: &[u8]) -> NomResult<'_, char> {
         map(
-            take1_filter(|c| {
-                b"!#$%&'*+-/=?^_`{|}~".contains(&c)
-                    || (b'0'..=b'9').contains(&c)
-                    || (b'A'..=b'Z').contains(&c)
-                    || (b'a'..=b'z').contains(&c)
-            }),
+            take1_filter(|c| b"!#$%&'*+-/=?^_`{|}~".contains(&c) || c.is_ascii_alphanumeric()),
             char::from,
         )(input)
     }
 
-    fn qtext(input: &[u8]) -> NomResult<char> {
+    fn qtext(input: &[u8]) -> NomResult<'_, char> {
         alt((
             map(
-                take1_filter(|c| match c {
-                    33 | 35..=91 | 93..=126 => true,
-                    _ => false,
-                }),
+                take1_filter(|c| matches!(c, 33 | 35..=91 | 93..=126)),
                 char::from,
             ),
             _8bit_char,
         ))(input)
     }
 
-    fn dtext(input: &[u8]) -> NomResult<char> {
+    fn dtext(input: &[u8]) -> NomResult<'_, char> {
         map(
-            take1_filter(|c| match c {
-                33..=90 | 94..=126 => true,
-                _ => false,
-            }),
+            take1_filter(|c| matches!(c, 33..=90 | 94..=126)),
             char::from,
         )(input)
     }
 }
 
 impl UTF8Policy for Intl {
-    fn vchar(input: &[u8]) -> NomResult<char> {
+    fn vchar(input: &[u8]) -> NomResult<'_, char> {
         alt((Legacy::vchar, utf8_non_ascii))(input)
     }
 
-    fn ctext(input: &[u8]) -> NomResult<char> {
+    fn ctext(input: &[u8]) -> NomResult<'_, char> {
         alt((Legacy::ctext, utf8_non_ascii))(input)
     }
 
-    fn atext(input: &[u8]) -> NomResult<char> {
+    fn atext(input: &[u8]) -> NomResult<'_, char> {
         alt((Legacy::atext, utf8_non_ascii))(input)
     }
 
-    fn qtext(input: &[u8]) -> NomResult<char> {
+    fn qtext(input: &[u8]) -> NomResult<'_, char> {
         alt((
             map(
-                take1_filter(|c| match c {
-                    33 | 35..=91 | 93..=126 => true,
-                    _ => false,
-                }),
+                take1_filter(|c| matches!(c, 33 | 35..=91 | 93..=126)),
                 char::from,
             ),
             utf8_non_ascii,
@@ -117,12 +100,12 @@ impl UTF8Policy for Intl {
         ))(input)
     }
 
-    fn dtext(input: &[u8]) -> NomResult<char> {
+    fn dtext(input: &[u8]) -> NomResult<'_, char> {
         alt((Legacy::dtext, utf8_non_ascii))(input)
     }
 }
 
-fn quoted_pair<P: UTF8Policy>(input: &[u8]) -> NomResult<char> {
+fn quoted_pair<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, char> {
     preceded(tag("\\"), alt((P::vchar, map(wsp, char::from))))(input)
 }
 
@@ -133,7 +116,7 @@ enum CommentContent<'a> {
     QP(char),
 }
 
-fn ccontent<P: UTF8Policy>(input: &[u8]) -> NomResult<CommentContent> {
+fn ccontent<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, CommentContent<'_>> {
     alt((
         alt((
             map(recognize_many1(P::ctext), |ct| {
@@ -145,7 +128,7 @@ fn ccontent<P: UTF8Policy>(input: &[u8]) -> NomResult<CommentContent> {
     ))(input)
 }
 
-fn fws(input: &[u8]) -> NomResult<Cow<str>> {
+fn fws(input: &[u8]) -> NomResult<'_, Cow<'_, str>> {
     //CRLF is "semantically invisible"
     map(
         pair(
@@ -163,7 +146,7 @@ fn fws(input: &[u8]) -> NomResult<Cow<str>> {
     )(input)
 }
 
-pub(crate) fn ofws(input: &[u8]) -> NomResult<Cow<str>> {
+pub(crate) fn ofws(input: &[u8]) -> NomResult<'_, Cow<'_, str>> {
     map(opt(fws), |i| i.unwrap_or_else(|| Cow::from("")))(input)
 }
 
@@ -173,11 +156,9 @@ fn _concat_comment<'a, I: IntoIterator<Item = CommentContent<'a>>>(
     let mut out = Vec::new();
     let mut acc_text = String::new();
 
-    let push_text = |bytes: &mut String, out: &mut Vec<CommentContent>| {
+    let push_text = |bytes: &mut String, out: &mut Vec<CommentContent<'_>>| {
         if !bytes.is_empty() {
-            out.push(CommentContent::Text(
-                mem::replace(bytes, String::new()).into(),
-            ))
+            out.push(CommentContent::Text(mem::take(bytes).into()))
         }
     };
 
@@ -196,7 +177,7 @@ fn _concat_comment<'a, I: IntoIterator<Item = CommentContent<'a>>>(
     out
 }
 
-fn comment<P: UTF8Policy>(input: &[u8]) -> NomResult<Vec<CommentContent>> {
+fn comment<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, Vec<CommentContent<'_>>> {
     map(
         delimited(
             tag("("),
@@ -223,7 +204,7 @@ fn comment<P: UTF8Policy>(input: &[u8]) -> NomResult<Vec<CommentContent>> {
     )(input)
 }
 
-fn cfws<P: UTF8Policy>(input: &[u8]) -> NomResult<&[u8]> {
+fn cfws<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, &[u8]> {
     alt((
         recognize(pair(many1(pair(ofws, comment::<P>)), ofws)),
         recognize(fws),
@@ -231,7 +212,7 @@ fn cfws<P: UTF8Policy>(input: &[u8]) -> NomResult<&[u8]> {
 }
 
 #[cfg(feature = "quoted-string-rfc2047")]
-fn qcontent<P: UTF8Policy>(input: &[u8]) -> NomResult<QContent> {
+fn qcontent<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, QContent<'_>> {
     alt((
         map(encoded_word, QContent::EncodedWord),
         map(recognize_many1(P::qtext), |q| {
@@ -242,7 +223,7 @@ fn qcontent<P: UTF8Policy>(input: &[u8]) -> NomResult<QContent> {
 }
 
 #[cfg(not(feature = "quoted-string-rfc2047"))]
-fn qcontent<P: UTF8Policy>(input: &[u8]) -> NomResult<QContent> {
+fn qcontent<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, QContent> {
     alt((
         map(recognize_many1(P::qtext), |q| {
             QContent::Literal(String::from_utf8_lossy(q))
@@ -252,7 +233,7 @@ fn qcontent<P: UTF8Policy>(input: &[u8]) -> NomResult<QContent> {
 }
 
 // quoted-string not surrounded by CFWS
-fn _inner_quoted_string<P: UTF8Policy>(input: &[u8]) -> NomResult<Vec<QContent>> {
+fn _inner_quoted_string<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, Vec<QContent<'_>>> {
     map(
         delimited(
             tag("\""),
@@ -280,7 +261,7 @@ fn _inner_quoted_string<P: UTF8Policy>(input: &[u8]) -> NomResult<Vec<QContent>>
     )(input)
 }
 
-pub(crate) fn quoted_string<P: UTF8Policy>(input: &[u8]) -> NomResult<QuotedString> {
+pub(crate) fn quoted_string<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, QuotedString> {
     map(
         delimited(opt(cfws::<P>), _inner_quoted_string::<P>, opt(cfws::<P>)),
         |qc| QuotedString(concat_qs(qc.into_iter())),
@@ -351,7 +332,7 @@ fn concat_qs<'a, A: Iterator<Item = QContent<'a>>>(input: A) -> String {
     out
 }
 
-fn _single_char(len: usize) -> impl Fn(&[u8]) -> NomResult<char> {
+fn _single_char(len: usize) -> impl Fn(&[u8]) -> NomResult<'_, char> {
     move |input| {
         map_opt(take(len), |c| {
             str::from_utf8(c).ok().and_then(|c| {
@@ -365,11 +346,11 @@ fn _single_char(len: usize) -> impl Fn(&[u8]) -> NomResult<char> {
     }
 }
 
-pub(crate) fn utf8_non_ascii(input: &[u8]) -> NomResult<char> {
+pub(crate) fn utf8_non_ascii(input: &[u8]) -> NomResult<'_, char> {
     alt((_single_char(4), _single_char(3), _single_char(2)))(input)
 }
 
-pub(crate) fn dot_atom<P: UTF8Policy>(input: &[u8]) -> NomResult<DotAtom> {
+pub(crate) fn dot_atom<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, DotAtom> {
     map(
         delimited(
             opt(cfws::<P>),
@@ -383,18 +364,18 @@ pub(crate) fn dot_atom<P: UTF8Policy>(input: &[u8]) -> NomResult<DotAtom> {
     )(input)
 }
 
-pub(crate) fn atom<P: UTF8Policy>(input: &[u8]) -> NomResult<&[u8]> {
+pub(crate) fn atom<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, &[u8]> {
     delimited(opt(cfws::<P>), recognize_many1(P::atext), opt(cfws::<P>))(input)
 }
 
-pub(crate) fn _padded_encoded_word<P: UTF8Policy>(input: &[u8]) -> NomResult<String> {
+pub(crate) fn _padded_encoded_word<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, String> {
     delimited(opt(cfws::<P>), encoded_word, opt(cfws::<P>))(input)
 }
 
-fn word<P: UTF8Policy>(input: &[u8]) -> NomResult<Text> {
+fn word<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, Text<'_>> {
     alt((
         map(_padded_encoded_word::<P>, Text::Literal),
-        map(atom::<P>, |x| Text::Atom(str::from_utf8(&x).unwrap())),
+        map(atom::<P>, |x| Text::Atom(str::from_utf8(x).unwrap())),
         map(quoted_string::<P>, |qs| Text::Literal(qs.0)),
     ))(input)
 }
@@ -409,11 +390,11 @@ where
     while let Some(cur) = iter.next() {
         match (cur, iter.peek()) {
             (Text::Atom(v), Some(_)) => {
-                out.push_str(&v);
+                out.push_str(v);
                 out.push(' ')
             }
             (_, Some(Text::Atom(v))) => {
-                out.push_str(&v);
+                out.push_str(v);
                 out.push(' ')
             }
             (ref t1, _) => out.push_str(t1.into()),
@@ -423,20 +404,20 @@ where
     out
 }
 
-fn display_name<P: UTF8Policy>(input: &[u8]) -> NomResult<String> {
+fn display_name<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, String> {
     map(many1(word::<P>), |words| {
-        _concat_atom_and_qs(words.into_iter().map(Into::into))
+        _concat_atom_and_qs(words.into_iter())
     })(input)
 }
 
-pub(crate) fn local_part<P: UTF8Policy>(input: &[u8]) -> NomResult<LocalPart> {
+pub(crate) fn local_part<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, LocalPart> {
     alt((
         map(dot_atom::<P>, |a| a.into()),
         map(quoted_string::<P>, LocalPart::Quoted),
     ))(input)
 }
 
-pub(crate) fn domain_literal<P: UTF8Policy>(input: &[u8]) -> NomResult<AddressLiteral> {
+pub(crate) fn domain_literal<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, AddressLiteral> {
     map(
         delimited(
             pair(opt(cfws::<P>), tag("[")),
@@ -455,25 +436,25 @@ pub(crate) fn domain_literal<P: UTF8Policy>(input: &[u8]) -> NomResult<AddressLi
     )(input)
 }
 
-pub(crate) fn _domain<P: UTF8Policy>(input: &[u8]) -> NomResult<Domain> {
+pub(crate) fn _domain<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, Domain> {
     map(dot_atom::<P>, |a| Domain(a.0))(input)
 }
 
-pub(crate) fn domain<P: UTF8Policy>(input: &[u8]) -> NomResult<DomainPart> {
+pub(crate) fn domain<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, DomainPart> {
     alt((
         map(_domain::<P>, DomainPart::Domain),
         map(domain_literal::<P>, DomainPart::Address),
     ))(input)
 }
 
-pub(crate) fn addr_spec<P: UTF8Policy>(input: &[u8]) -> NomResult<types::Mailbox> {
+pub(crate) fn addr_spec<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, types::Mailbox> {
     map(
         separated_pair(local_part::<P>, tag("@"), domain::<P>),
         |(lp, domain)| types::Mailbox(lp, domain),
     )(input)
 }
 
-fn angle_addr<P: UTF8Policy>(input: &[u8]) -> NomResult<types::Mailbox> {
+fn angle_addr<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, types::Mailbox> {
     delimited(
         pair(opt(cfws::<P>), tag("<")),
         addr_spec::<P>,
@@ -481,14 +462,14 @@ fn angle_addr<P: UTF8Policy>(input: &[u8]) -> NomResult<types::Mailbox> {
     )(input)
 }
 
-fn name_addr<P: UTF8Policy>(input: &[u8]) -> NomResult<Mailbox> {
+fn name_addr<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, Mailbox> {
     map(
         pair(opt(display_name::<P>), angle_addr::<P>),
         |(dname, address)| Mailbox { dname, address },
     )(input)
 }
 
-fn mailbox<P: UTF8Policy>(input: &[u8]) -> NomResult<Mailbox> {
+fn mailbox<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, Mailbox> {
     alt((
         name_addr::<P>,
         map(addr_spec::<P>, |a| Mailbox {
@@ -498,15 +479,15 @@ fn mailbox<P: UTF8Policy>(input: &[u8]) -> NomResult<Mailbox> {
     ))(input)
 }
 
-fn mailbox_list<P: UTF8Policy>(input: &[u8]) -> NomResult<Vec<Mailbox>> {
+fn mailbox_list<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, Vec<Mailbox>> {
     fold_prefix0(mailbox::<P>, preceded(tag(","), mailbox::<P>))(input)
 }
 
-fn group_list<P: UTF8Policy>(input: &[u8]) -> NomResult<Vec<Mailbox>> {
+fn group_list<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, Vec<Mailbox>> {
     alt((mailbox_list::<P>, map(cfws::<P>, |_| vec![])))(input)
 }
 
-fn group<P: UTF8Policy>(input: &[u8]) -> NomResult<Group> {
+fn group<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, Group> {
     map(
         pair(
             terminated(display_name::<P>, tag(":")),
@@ -519,33 +500,33 @@ fn group<P: UTF8Policy>(input: &[u8]) -> NomResult<Group> {
     )(input)
 }
 
-fn address<P: UTF8Policy>(input: &[u8]) -> NomResult<Address> {
+fn address<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, Address> {
     alt((
         map(mailbox::<P>, Address::Mailbox),
         map(group::<P>, Address::Group),
     ))(input)
 }
 
-fn address_list<P: UTF8Policy>(input: &[u8]) -> NomResult<Vec<Address>> {
+fn address_list<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, Vec<Address>> {
     fold_prefix0(address::<P>, preceded(tag(","), address::<P>))(input)
 }
 
-fn address_list_crlf<P: UTF8Policy>(input: &[u8]) -> NomResult<Vec<Address>> {
+fn address_list_crlf<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, Vec<Address>> {
     terminated(address_list::<P>, opt(crlf))(input)
 }
 
-fn address_crlf<P: UTF8Policy>(input: &[u8]) -> NomResult<Address> {
+fn address_crlf<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, Address> {
     terminated(address::<P>, opt(crlf))(input)
 }
 
-fn _8bit_char(input: &[u8]) -> NomResult<char> {
+fn _8bit_char(input: &[u8]) -> NomResult<'_, char> {
     map(take1_filter(|c| (0x80..=0xff).contains(&c)), |_| '\u{fffd}')(input)
 }
 
 /// Parse an unstructured header such as `"Subject:"`.
 ///
 /// Returns a fully decoded string.
-pub fn unstructured<P: UTF8Policy>(input: &[u8]) -> NomResult<String> {
+pub fn unstructured<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, String> {
     map(
         pair(
             many0(alt((
@@ -583,20 +564,20 @@ pub fn unstructured<P: UTF8Policy>(input: &[u8]) -> NomResult<String> {
 /// authors.
 ///
 /// [RFC 6854]: https://tools.ietf.org/html/rfc6854
-pub fn from<P: UTF8Policy>(i: &[u8]) -> NomResult<Vec<Address>> {
+pub fn from<P: UTF8Policy>(i: &[u8]) -> NomResult<'_, Vec<Address>> {
     address_list_crlf::<P>(i)
 }
 
 /// Parse the content of a `"Sender:"` header.
 ///
 /// Returns a single address.
-pub fn sender<P: UTF8Policy>(i: &[u8]) -> NomResult<Address> {
+pub fn sender<P: UTF8Policy>(i: &[u8]) -> NomResult<'_, Address> {
     address_crlf::<P>(i)
 }
 
 /// Parse the content of a `"Reply-To:"` header.
 ///
 /// Returns a list of addresses.
-pub fn reply_to<P: UTF8Policy>(i: &[u8]) -> NomResult<Vec<Address>> {
+pub fn reply_to<P: UTF8Policy>(i: &[u8]) -> NomResult<'_, Vec<Address>> {
     address_list_crlf::<P>(i)
 }

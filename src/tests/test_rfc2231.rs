@@ -153,7 +153,7 @@ fn cd_mixed() {
     for input in CASES.iter() {
         let (rem, (disp, params)) = content_disposition(input).unwrap();
         assert_eq!(rem.len(), 0);
-        assert_eq!(disp.to_string(), std::str::from_utf8(*input).unwrap());
+        assert_eq!(disp.to_string(), std::str::from_utf8(input).unwrap());
         assert_eq!(params, []);
     }
 }
@@ -192,7 +192,7 @@ fn cte_mixed() {
     for input in CASES.iter() {
         let (rem, parsed) = content_transfer_encoding(input).unwrap();
         assert_eq!(rem.len(), 0);
-        assert_eq!(parsed.to_string(), std::str::from_utf8(*input).unwrap());
+        assert_eq!(parsed.to_string(), std::str::from_utf8(input).unwrap());
     }
 }
 

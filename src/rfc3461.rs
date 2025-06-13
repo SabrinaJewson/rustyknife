@@ -19,34 +19,28 @@ use nom::sequence::separated_pair;
 use std::borrow::Cow;
 use std::str;
 
-pub(crate) fn hexpair(input: &[u8]) -> NomResult<u8> {
+pub(crate) fn hexpair(input: &[u8]) -> NomResult<'_, u8> {
     map_res(
         verify(take(2usize), |c: &[u8]| c.iter().cloned().all(is_hex_digit)),
         |x| u8::from_str_radix(str::from_utf8(x).unwrap(), 16),
     )(input)
 }
 
-fn hexchar(input: &[u8]) -> NomResult<u8> {
+fn hexchar(input: &[u8]) -> NomResult<'_, u8> {
     preceded(tag("+"), hexpair)(input)
 }
 
-fn xchar(input: &[u8]) -> NomResult<u8> {
-    take1_filter(|c| match c {
-        33..=42 | 44..=60 | 62..=126 => true,
-        _ => false,
-    })(input)
+fn xchar(input: &[u8]) -> NomResult<'_, u8> {
+    take1_filter(|c| matches!(c, 33..=42 | 44..=60 | 62..=126))(input)
 }
 
-pub(crate) fn xtext(input: &[u8]) -> NomResult<Vec<u8>> {
+pub(crate) fn xtext(input: &[u8]) -> NomResult<'_, Vec<u8>> {
     many0(alt((xchar, hexchar)))(input)
 }
 
-fn _printable_xtext(input: &[u8]) -> NomResult<Vec<u8>> {
+fn _printable_xtext(input: &[u8]) -> NomResult<'_, Vec<u8>> {
     verify(xtext, |xtext: &[u8]| {
-        xtext.iter().all(|c| match c {
-            9..=13 | 32..=126 => true,
-            _ => false,
-        })
+        xtext.iter().all(|c| matches!(c, 9..=13 | 32..=126))
     })(input)
 }
 
@@ -61,7 +55,7 @@ fn _printable_xtext(input: &[u8]) -> NomResult<Vec<u8>> {
 ///
 /// assert_eq!(split, ("rfc822".into(), "bob@example.org".into()));
 /// ```
-pub fn orcpt_address(input: &[u8]) -> NomResult<(Cow<str>, Cow<str>)> {
+pub fn orcpt_address(input: &[u8]) -> NomResult<'_, (Cow<'_, str>, Cow<'_, str>)> {
     map(
         separated_pair(atom::<crate::behaviour::Legacy>, tag(";"), _printable_xtext),
         |(a, b)| (decode_ascii(a), Cow::Owned(decode_ascii(&b).into_owned())),

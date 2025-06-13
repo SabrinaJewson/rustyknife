@@ -23,7 +23,7 @@ use nom::sequence::separated_pair;
 #[derive(Clone, Debug)]
 pub struct Param(pub &'static str, pub Option<String>);
 
-fn command_name(input: &[u8]) -> NomResult<&'static str> {
+fn command_name(input: &[u8]) -> NomResult<'_, &'static str> {
     alt((
         map(tag_no_case("addr"), |_| "addr"),
         map(tag_no_case("helo"), |_| "helo"),
@@ -35,15 +35,15 @@ fn command_name(input: &[u8]) -> NomResult<&'static str> {
     ))(input)
 }
 
-fn unavailable(input: &[u8]) -> NomResult<Option<String>> {
+fn unavailable(input: &[u8]) -> NomResult<'_, Option<String>> {
     map(tag_no_case("[unavailable]"), |_| None)(input)
 }
 
-fn value(input: &[u8]) -> NomResult<Option<String>> {
+fn value(input: &[u8]) -> NomResult<'_, Option<String>> {
     alt((unavailable, map(xtext, |x| Some(decode_ascii(&x).into()))))(input)
 }
 
-fn param(input: &[u8]) -> NomResult<Param> {
+fn param(input: &[u8]) -> NomResult<'_, Param> {
     map(separated_pair(command_name, tag("="), value), |(c, v)| {
         Param(c, v)
     })(input)
@@ -57,13 +57,13 @@ fn param(input: &[u8]) -> NomResult<Param> {
 /// lowercase. The values are xtext decoded and a value of
 /// `[UNAVAILABLE]` is translated to `None`. No other validation is
 /// done.
-pub fn xforward_params(input: &[u8]) -> NomResult<Vec<Param>> {
+pub fn xforward_params(input: &[u8]) -> NomResult<'_, Vec<Param>> {
     fold_prefix0(
         preceded(opt(many1(wsp)), param),
         preceded(many1(wsp), param),
     )(input)
 }
 
-pub fn command(input: &[u8]) -> NomResult<Vec<Param>> {
+pub fn command(input: &[u8]) -> NomResult<'_, Vec<Param>> {
     delimited(tag_no_case("XFORWARD "), xforward_params, crlf)(input)
 }

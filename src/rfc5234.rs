@@ -3,22 +3,22 @@ use nom::branch::alt;
 use nom::bytes::complete::tag;
 use nom::combinator::map;
 
-fn sp(input: &[u8]) -> NomResult<&[u8]> {
+fn sp(input: &[u8]) -> NomResult<'_, &[u8]> {
     tag(" ")(input)
 }
 
-fn htab(input: &[u8]) -> NomResult<&[u8]> {
+fn htab(input: &[u8]) -> NomResult<'_, &[u8]> {
     tag("\t")(input)
 }
 
-pub(crate) fn wsp(input: &[u8]) -> NomResult<u8> {
+pub(crate) fn wsp(input: &[u8]) -> NomResult<'_, u8> {
     map(alt((sp, htab)), |x| x[0])(input)
 }
 
-pub fn vchar(input: &[u8]) -> NomResult<char> {
+pub fn vchar(input: &[u8]) -> NomResult<'_, char> {
     map(take1_filter(|c| (0x21..=0x7e).contains(&c)), char::from)(input)
 }
 
-pub fn crlf(input: &[u8]) -> NomResult<&[u8]> {
+pub fn crlf(input: &[u8]) -> NomResult<'_, &[u8]> {
     tag("\r\n")(input)
 }

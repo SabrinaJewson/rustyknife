@@ -64,15 +64,15 @@ enum ExtendedValue<'a> {
     Other(Vec<u8>),
 }
 
-fn _equals(input: &[u8]) -> NomResult<()> {
+fn _equals(input: &[u8]) -> NomResult<'_, ()> {
     map(tuple((ofws, tag("="), ofws)), |_| ())(input)
 }
 
-fn parameter(input: &[u8]) -> NomResult<Parameter> {
+fn parameter(input: &[u8]) -> NomResult<'_, Parameter<'_>> {
     alt((regular_parameter, extended_parameter))(input)
 }
 
-fn regular_parameter(input: &[u8]) -> NomResult<Parameter> {
+fn regular_parameter(input: &[u8]) -> NomResult<'_, Parameter<'_>> {
     map(
         separated_pair(regular_parameter_name, _equals, value),
         |(name, value)| Parameter {
@@ -82,14 +82,14 @@ fn regular_parameter(input: &[u8]) -> NomResult<Parameter> {
     )(input)
 }
 
-fn regular_parameter_name(input: &[u8]) -> NomResult<Name> {
+fn regular_parameter_name(input: &[u8]) -> NomResult<'_, Name<'_>> {
     map(pair(attribute, opt(section)), |(name, section)| Name {
         name: std::str::from_utf8(name).unwrap(),
         section,
     })(input)
 }
 
-fn token(input: &[u8]) -> NomResult<&str> {
+fn token(input: &[u8]) -> NomResult<'_, &str> {
     map(
         take_while1(|c| (33..=126).contains(&c) && !b"()<>@,;:\\\"/[]?=".contains(&c)),
         |t| std::str::from_utf8(t).unwrap(),
@@ -100,23 +100,23 @@ fn is_attribute_char(c: u8) -> bool {
     (33..=126).contains(&c) && !b"*'%()<>@,;:\\\"/[]?=".contains(&c)
 }
 
-fn attribute_char(input: &[u8]) -> NomResult<u8> {
+fn attribute_char(input: &[u8]) -> NomResult<'_, u8> {
     take1_filter(is_attribute_char)(input)
 }
 
-fn attribute(input: &[u8]) -> NomResult<&[u8]> {
+fn attribute(input: &[u8]) -> NomResult<'_, &[u8]> {
     take_while1(is_attribute_char)(input)
 }
 
-fn section(input: &[u8]) -> NomResult<u32> {
+fn section(input: &[u8]) -> NomResult<'_, u32> {
     alt((initial_section, other_sections))(input)
 }
 
-fn initial_section(input: &[u8]) -> NomResult<u32> {
+fn initial_section(input: &[u8]) -> NomResult<'_, u32> {
     map(tag("*0"), |_| 0)(input)
 }
 
-fn other_sections(input: &[u8]) -> NomResult<u32> {
+fn other_sections(input: &[u8]) -> NomResult<'_, u32> {
     map(
         preceded(
             tag("*"),
@@ -126,7 +126,7 @@ fn other_sections(input: &[u8]) -> NomResult<u32> {
     )(input)
 }
 
-fn extended_parameter(input: &[u8]) -> NomResult<Parameter> {
+fn extended_parameter(input: &[u8]) -> NomResult<'_, Parameter<'_>> {
     alt((
         map(
             separated_pair(extended_initial_name, _equals, extended_initial_value),
@@ -145,27 +145,27 @@ fn extended_parameter(input: &[u8]) -> NomResult<Parameter> {
     ))(input)
 }
 
-fn extended_initial_name(input: &[u8]) -> NomResult<Name> {
+fn extended_initial_name(input: &[u8]) -> NomResult<'_, Name<'_>> {
     map(
         terminated(pair(attribute, opt(initial_section)), tag("*")),
         |(name, section)| Name {
-            name: str::from_utf8(&name).unwrap(),
+            name: str::from_utf8(name).unwrap(),
             section,
         },
     )(input)
 }
 
-fn extended_other_names(input: &[u8]) -> NomResult<Name> {
+fn extended_other_names(input: &[u8]) -> NomResult<'_, Name<'_>> {
     map(
         terminated(pair(attribute, other_sections), tag("*")),
         |(name, section)| Name {
-            name: str::from_utf8(&name).unwrap(),
+            name: str::from_utf8(name).unwrap(),
             section: Some(section),
         },
     )(input)
 }
 
-fn extended_initial_value(input: &[u8]) -> NomResult<ExtendedValue> {
+fn extended_initial_value(input: &[u8]) -> NomResult<'_, ExtendedValue<'_>> {
     map(
         tuple((
             terminated(opt(attribute), tag("'")),
@@ -180,15 +180,15 @@ fn extended_initial_value(input: &[u8]) -> NomResult<ExtendedValue> {
     )(input)
 }
 
-fn ext_octet(input: &[u8]) -> NomResult<u8> {
+fn ext_octet(input: &[u8]) -> NomResult<'_, u8> {
     preceded(tag("%"), hexpair)(input)
 }
 
-fn extended_other_values(input: &[u8]) -> NomResult<Vec<u8>> {
+fn extended_other_values(input: &[u8]) -> NomResult<'_, Vec<u8>> {
     many0(alt((ext_octet, attribute_char)))(input)
 }
 
-fn value(input: &[u8]) -> NomResult<Cow<str>> {
+fn value(input: &[u8]) -> NomResult<'_, Cow<'_, str>> {
     alt((
         map(token, Cow::from),
         map(quoted_string::<crate::behaviour::Intl>, |qs| {
@@ -197,11 +197,11 @@ fn value(input: &[u8]) -> NomResult<Cow<str>> {
     ))(input)
 }
 
-fn _mime_type(input: &[u8]) -> NomResult<&[u8]> {
+fn _mime_type(input: &[u8]) -> NomResult<'_, &[u8]> {
     recognize(tuple((token, tag("/"), token)))(input)
 }
 
-fn _parameter_list(input: &[u8]) -> NomResult<Vec<Parameter>> {
+fn _parameter_list(input: &[u8]) -> NomResult<'_, Vec<Parameter<'_>>> {
     terminated(
         many0(preceded(pair(tag(";"), ofws), parameter)),
         pair(opt(tag(";")), opt(crlf)),
@@ -214,7 +214,7 @@ enum Segment<'a> {
     Decoded(Cow<'a, str>),
 }
 
-fn decode_segments(mut input: Vec<(u32, Segment)>, encoding: &'static Encoding) -> String {
+fn decode_segments(mut input: Vec<(u32, Segment<'_>)>, encoding: &'static Encoding) -> String {
     input.sort_by(|a, b| a.0.cmp(&b.0));
     let mut out = String::new();
     let mut encoded = Vec::new();
@@ -239,10 +239,10 @@ fn decode_segments(mut input: Vec<(u32, Segment)>, encoding: &'static Encoding) 
     out
 }
 
-fn decode_parameter_list(input: Vec<Parameter>) -> Vec<(String, String)> {
+fn decode_parameter_list(input: Vec<Parameter<'_>>) -> Vec<(String, String)> {
     let mut simple = HashMap::<String, String>::new();
     let mut simple_encoded = HashMap::<String, String>::new();
-    let mut composite = HashMap::<String, Vec<(u32, Segment)>>::new();
+    let mut composite = HashMap::<String, Vec<(u32, Segment<'_>)>>::new();
     let mut composite_encoding = HashMap::new();
 
     for Parameter { name, value } in input {
@@ -320,14 +320,14 @@ fn decode_parameter_list(input: Vec<Parameter>) -> Vec<(String, String)> {
 /// Parse a MIME `"Content-Type"` header.
 ///
 /// Returns a tuple of the MIME type and parameters.
-pub fn content_type(input: &[u8]) -> NomResult<(String, Vec<(String, String)>)> {
+pub fn content_type(input: &[u8]) -> NomResult<'_, (String, Vec<(String, String)>)> {
     map(
         pair(delimited(ofws, _mime_type, ofws), _parameter_list),
         |(mt, p)| (decode_ascii(mt).to_lowercase(), decode_parameter_list(p)),
     )(input)
 }
 
-fn _x_token(input: &[u8]) -> NomResult<&str> {
+fn _x_token(input: &[u8]) -> NomResult<'_, &str> {
     preceded(tag_no_case("x-"), token)(input)
 }
 
@@ -346,7 +346,7 @@ pub enum ContentDisposition {
 }
 
 impl Display for ContentDisposition {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ContentDisposition::Inline => write!(f, "inline"),
             ContentDisposition::Attachment => write!(f, "attachment"),
@@ -356,7 +356,7 @@ impl Display for ContentDisposition {
     }
 }
 
-fn _disposition(input: &[u8]) -> NomResult<ContentDisposition> {
+fn _disposition(input: &[u8]) -> NomResult<'_, ContentDisposition> {
     alt((
         map(tag_no_case("inline"), |_| ContentDisposition::Inline),
         map(tag_no_case("attachment"), |_| {
@@ -370,7 +370,9 @@ fn _disposition(input: &[u8]) -> NomResult<ContentDisposition> {
 /// Parse a MIME `"Content-Disposition"` header.
 ///
 /// Returns a tuple of [`ContentDisposition`] and parameters.
-pub fn content_disposition(input: &[u8]) -> NomResult<(ContentDisposition, Vec<(String, String)>)> {
+pub fn content_disposition(
+    input: &[u8],
+) -> NomResult<'_, (ContentDisposition, Vec<(String, String)>)> {
     map(
         pair(delimited(ofws, _disposition, ofws), _parameter_list),
         |(disp, p)| (disp, decode_parameter_list(p)),
@@ -398,7 +400,7 @@ pub enum ContentTransferEncoding {
 }
 
 impl Display for ContentTransferEncoding {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             CTE::SevenBit => write!(f, "7bit"),
             CTE::EightBit => write!(f, "8bit"),
@@ -416,7 +418,7 @@ use self::ContentTransferEncoding as CTE;
 /// Parse a MIME `"Content-Transfer-Encoding"` header.
 ///
 /// Returns a [`ContentTransferEncoding`].
-pub fn content_transfer_encoding(input: &[u8]) -> NomResult<ContentTransferEncoding> {
+pub fn content_transfer_encoding(input: &[u8]) -> NomResult<'_, ContentTransferEncoding> {
     delimited(
         ofws,
         alt((

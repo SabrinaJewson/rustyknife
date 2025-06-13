@@ -1,6 +1,6 @@
 use crate::headersection::*;
 
-fn hs(i: &[u8]) -> Vec<HeaderField> {
+fn hs(i: &[u8]) -> Vec<HeaderField<'_>> {
     let (rem, parsed) = header_section(i).unwrap();
     assert_eq!(rem.len(), 0);
     parsed

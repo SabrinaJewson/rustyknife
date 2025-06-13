@@ -124,7 +124,7 @@ impl DotAtom {
 }
 
 impl Display for LocalPart {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             LocalPart::DotAtom(a) => write!(f, "{}", a),
             LocalPart::Quoted(q) => write!(f, "{}", q.quoted()),
@@ -159,7 +159,7 @@ impl From<AddressLiteral> for DomainPart {
 }
 
 impl Display for DomainPart {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             DomainPart::Domain(d) => write!(f, "{}", d),
             DomainPart::Address(a) => write!(f, "{}", a),
@@ -229,7 +229,7 @@ impl AddressLiteral {
 }
 
 impl Display for AddressLiteral {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             AddressLiteral::IP(ip) => match ip {
                 IpAddr::V4(ipv4) => write!(f, "[{}]", ipv4),
@@ -283,7 +283,7 @@ impl Mailbox {
 nom_fromstr!(Mailbox, smtp::mailbox::<Intl>);
 
 impl Display for Mailbox {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}@{}", self.0, self.1)
     }
 }

@@ -126,8 +126,8 @@ fn postmaster_rcpt() {
 
 #[test]
 fn validate() {
-    assert_eq!(validate_address::<Intl>(b"mrbob@example.org"), true);
-    assert_eq!(validate_address::<Intl>(b"mrbob\"@example.org"), false);
+    assert!(validate_address::<Intl>(b"mrbob@example.org"));
+    assert!(!validate_address::<Intl>(b"mrbob\"@example.org"));
 }
 
 #[test]

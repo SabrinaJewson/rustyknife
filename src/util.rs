@@ -41,7 +41,7 @@ macro_rules! nom_fromstr {
 macro_rules! nom_from_smtp {
     ( $smtp_func:path ) => {
         /// Parse using SMTP syntax.
-        pub fn from_smtp(value: &[u8]) -> Result<Self, nom::Err<NomError>> {
+        pub fn from_smtp(value: &[u8]) -> Result<Self, nom::Err<NomError<'_>>> {
             exact!(value, $smtp_func).map(|(_, v)| v)
         }
     };
@@ -49,7 +49,7 @@ macro_rules! nom_from_smtp {
 macro_rules! nom_from_imf {
     ( $imf_func:path ) => {
         /// Parse using Internet Message Format syntax.
-        pub fn from_imf(value: &[u8]) -> Result<Self, nom::Err<NomError>> {
+        pub fn from_imf(value: &[u8]) -> Result<Self, nom::Err<NomError<'_>>> {
             exact!(value, $imf_func).map(|(_, v)| v)
         }
     };
@@ -58,8 +58,8 @@ macro_rules! nom_from_imf {
 macro_rules! string_newtype {
     ( $type:ident ) => {
         impl std::fmt::Display for $type {
-            fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-                write!(f, "{}", self.0)
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str(&self.0)
             }
         }
         impl std::convert::AsRef<[u8]> for $type {
@@ -80,8 +80,8 @@ macro_rules! string_newtype {
         }
 
         impl std::fmt::Debug for $type {
-            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                write!(f, "{:?}", self.0)
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> fmt::Result {
+                <str as std::fmt::Debug>::fmt(&self.0, f)
             }
         }
     };
@@ -127,7 +127,7 @@ where
     recognize(fold_many1(f, (), |_, _| ()))
 }
 
-pub(crate) fn take1_filter<F>(pred: F) -> impl Fn(&[u8]) -> NomResult<u8>
+pub(crate) fn take1_filter<F>(pred: F) -> impl Fn(&[u8]) -> NomResult<'_, u8>
 where
     F: Fn(u8) -> bool,
 {
