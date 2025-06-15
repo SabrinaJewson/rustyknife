@@ -1,4 +1,4 @@
-//#![doc = include_str!("../README.md")] FIXME
+#![doc = include_str!("../README.md")]
 #![warn(rust_2018_idioms)]
 // #![warn(missing_docs)]
 #![allow(clippy::result_unit_err)]
