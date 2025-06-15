@@ -14,9 +14,7 @@ use nom::bytes::complete::tag;
 use nom::bytes::complete::tag_no_case;
 use nom::bytes::complete::take_while1;
 use nom::bytes::complete::take_while_m_n;
-use nom::character::is_alphanumeric;
-use nom::character::is_digit;
-use nom::character::is_hex_digit;
+use nom::combinator::all_consuming;
 use nom::combinator::map;
 use nom::combinator::map_res;
 use nom::combinator::opt;
@@ -26,6 +24,7 @@ use nom::error::ParseError;
 use nom::multi::many0;
 use nom::multi::many1;
 use nom::multi::many_m_n;
+use nom::multi::separated_list1;
 use nom::sequence::delimited;
 use nom::sequence::pair;
 use nom::sequence::preceded;
@@ -44,16 +43,16 @@ use std::str::FromStr;
 use std::str::{self};
 
 #[allow(missing_docs)] // Mostly internal
-pub trait UTF8Policy {
+pub trait Utf8Policy {
     fn atext(input: &[u8]) -> NomResult<'_, char>;
     fn qtext_smtp(input: &[u8]) -> NomResult<'_, char>;
     fn esmtp_value_char(input: &[u8]) -> NomResult<'_, char>;
     fn sub_domain(input: &[u8]) -> NomResult<'_, &[u8]>;
 }
 
-impl UTF8Policy for Legacy {
+impl Utf8Policy for Legacy {
     fn atext(input: &[u8]) -> NomResult<'_, char> {
-        <Legacy as crate::rfc5322::UTF8Policy>::atext(input)
+        <Legacy as crate::rfc5322::Utf8Policy>::atext(input)
     }
 
     fn qtext_smtp(input: &[u8]) -> NomResult<'_, char> {
@@ -75,9 +74,9 @@ impl UTF8Policy for Legacy {
     }
 }
 
-impl UTF8Policy for Intl {
+impl Utf8Policy for Intl {
     fn atext(input: &[u8]) -> NomResult<'_, char> {
-        <Intl as crate::rfc5322::UTF8Policy>::atext(input)
+        <Intl as crate::rfc5322::Utf8Policy>::atext(input)
     }
 
     fn qtext_smtp(input: &[u8]) -> NomResult<'_, char> {
@@ -284,34 +283,34 @@ impl From<ReversePath> for Option<Mailbox> {
 }
 
 fn _is_ldh(c: u8) -> bool {
-    is_alphanumeric(c) || c == b'-'
+    c.is_ascii_alphanumeric() || c == b'-'
 }
 
 fn esmtp_keyword(input: &[u8]) -> NomResult<'_, Keyword> {
     map(
         recognize(pair(
-            take1_filter(is_alphanumeric),
+            take1_filter(|c| c.is_ascii_alphanumeric()),
             recognize_many0(take1_filter(_is_ldh)),
         )),
         |x| Keyword(std::str::from_utf8(x).unwrap().into()),
     )(input)
 }
 
-fn esmtp_value<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, Value> {
+fn esmtp_value<P: Utf8Policy>(input: &[u8]) -> NomResult<'_, Value> {
     map(recognize_many1(P::esmtp_value_char), |x| {
         Value(std::str::from_utf8(x).unwrap().into())
     })(input)
 }
 
-fn esmtp_param<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, Param> {
+fn esmtp_param<P: Utf8Policy>(input: &[u8]) -> NomResult<'_, Param> {
     map(
         pair(esmtp_keyword, opt(preceded(tag("="), esmtp_value::<P>))),
         |(n, v)| Param(n, v),
     )(input)
 }
 
-fn _esmtp_params<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, Vec<Param>> {
-    fold_prefix0(esmtp_param::<P>, preceded(many1(wsp), esmtp_param::<P>))(input)
+fn _esmtp_params<P: Utf8Policy>(input: &[u8]) -> NomResult<'_, Vec<Param>> {
+    separated_list1(many1(wsp), esmtp_param::<P>)(input)
 }
 
 fn ldh_str(input: &[u8]) -> NomResult<'_, &[u8]> {
@@ -333,29 +332,29 @@ fn ldh_str(input: &[u8]) -> NomResult<'_, &[u8]> {
 }
 
 fn let_dig(input: &[u8]) -> NomResult<'_, u8> {
-    take1_filter(is_alphanumeric)(input)
+    take1_filter(|c| c.is_ascii_alphanumeric())(input)
 }
 
-pub(crate) fn domain<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, Domain> {
+pub(crate) fn domain<P: Utf8Policy>(input: &[u8]) -> NomResult<'_, Domain> {
     map(
         recognize(pair(P::sub_domain, many0(pair(tag("."), P::sub_domain)))),
         |domain| Domain(str::from_utf8(domain).unwrap().into()),
     )(input)
 }
 
-fn at_domain<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, Domain> {
+fn at_domain<P: Utf8Policy>(input: &[u8]) -> NomResult<'_, Domain> {
     preceded(tag("@"), domain::<P>)(input)
 }
 
-fn a_d_l<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, Vec<Domain>> {
-    fold_prefix0(at_domain::<P>, preceded(tag(","), at_domain::<P>))(input)
+fn a_d_l<P: Utf8Policy>(input: &[u8]) -> NomResult<'_, Vec<Domain>> {
+    separated_list1(tag(","), at_domain::<P>)(input)
 }
 
-fn atom<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, &[u8]> {
+fn atom<P: Utf8Policy>(input: &[u8]) -> NomResult<'_, &[u8]> {
     recognize_many1(P::atext)(input)
 }
 
-pub(crate) fn dot_string<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, DotAtom> {
+pub(crate) fn dot_string<P: Utf8Policy>(input: &[u8]) -> NomResult<'_, DotAtom> {
     map(
         recognize(pair(atom::<P>, many0(pair(tag("."), atom::<P>)))),
         |a| DotAtom(str::from_utf8(a).unwrap().into()),
@@ -369,18 +368,18 @@ fn quoted_pair_smtp(input: &[u8]) -> NomResult<'_, char> {
     )(input)
 }
 
-fn qcontent_smtp<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, char> {
+fn qcontent_smtp<P: Utf8Policy>(input: &[u8]) -> NomResult<'_, char> {
     alt((P::qtext_smtp, quoted_pair_smtp))(input)
 }
 
-pub(crate) fn quoted_string<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, QuotedString> {
+pub(crate) fn quoted_string<P: Utf8Policy>(input: &[u8]) -> NomResult<'_, QuotedString> {
     map(
         delimited(tag("\""), many0(qcontent_smtp::<P>), tag("\"")),
         |qs| QuotedString(qs.into_iter().collect()),
     )(input)
 }
 
-pub(crate) fn local_part<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, LocalPart> {
+pub(crate) fn local_part<P: Utf8Policy>(input: &[u8]) -> NomResult<'_, LocalPart> {
     alt((
         map(dot_string::<P>, |s| s.into()),
         map(quoted_string::<P>, LocalPart::Quoted),
@@ -388,7 +387,7 @@ pub(crate) fn local_part<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, LocalPart
 }
 
 fn _ip_int(input: &[u8]) -> NomResult<'_, u8> {
-    map_res(take_while_m_n(1, 3, is_digit), |ip| {
+    map_res(take_while_m_n(1, 3, |c: u8| c.is_ascii_digit()), |ip| {
         str::from_utf8(ip).unwrap().parse()
     })(input)
 }
@@ -404,7 +403,7 @@ fn _ipv6_literal(input: &[u8]) -> NomResult<'_, AddressLiteral> {
     map_res(
         preceded(
             tag_no_case("IPv6:"),
-            take_while1(|c| is_hex_digit(c) || c == b':' || c == b'.'),
+            take_while1(|c: u8| c.is_ascii_hexdigit() || c == b':' || c == b'.'),
         ),
         |addr| {
             Ipv6Addr::from_str(str::from_utf8(addr).unwrap())
@@ -436,21 +435,21 @@ pub(crate) fn address_literal(input: &[u8]) -> NomResult<'_, AddressLiteral> {
     delimited(tag("["), _inner_address_literal, tag("]"))(input)
 }
 
-pub(crate) fn _domain_part<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, DomainPart> {
+pub(crate) fn _domain_part<P: Utf8Policy>(input: &[u8]) -> NomResult<'_, DomainPart> {
     alt((
         map(domain::<P>, DomainPart::Domain),
         map(address_literal, DomainPart::Address),
     ))(input)
 }
 
-pub fn mailbox<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, Mailbox> {
+pub fn mailbox<P: Utf8Policy>(input: &[u8]) -> NomResult<'_, Mailbox> {
     map(
         separated_pair(local_part::<P>, tag("@"), _domain_part::<P>),
         |(lp, dp)| Mailbox(lp, dp),
     )(input)
 }
 
-fn path<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, Path> {
+fn path<P: Utf8Policy>(input: &[u8]) -> NomResult<'_, Path> {
     map(
         delimited(
             tag("<"),
@@ -461,7 +460,7 @@ fn path<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, Path> {
     )(input)
 }
 
-fn reverse_path<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, ReversePath> {
+fn reverse_path<P: Utf8Policy>(input: &[u8]) -> NomResult<'_, ReversePath> {
     alt((
         map(path::<P>, ReversePath::Path),
         map(tag("<>"), |_| ReversePath::Null),
@@ -469,12 +468,12 @@ fn reverse_path<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, ReversePath> {
 }
 
 /// Parse an SMTP EHLO command.
-pub fn ehlo_command<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, DomainPart> {
+pub fn ehlo_command<P: Utf8Policy>(input: &[u8]) -> NomResult<'_, DomainPart> {
     delimited(tag_no_case("EHLO "), _domain_part::<P>, crlf)(input)
 }
 
 /// Parse an SMTP HELO command.
-pub fn helo_command<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, Domain> {
+pub fn helo_command<P: Utf8Policy>(input: &[u8]) -> NomResult<'_, Domain> {
     delimited(tag_no_case("HELO "), domain::<P>, crlf)(input)
 }
 
@@ -491,7 +490,7 @@ pub fn helo_command<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, Domain> {
 /// assert_eq!(rp.to_string(), "<bob@example.org>");
 /// assert_eq!(params, [Param::new("BODY", Some("8BIT")).unwrap()]);
 /// ```
-pub fn mail_command<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, (ReversePath, Vec<Param>)> {
+pub fn mail_command<P: Utf8Policy>(input: &[u8]) -> NomResult<'_, (ReversePath, Vec<Param>)> {
     map(
         delimited(
             tag_no_case("MAIL FROM:"),
@@ -505,7 +504,7 @@ pub fn mail_command<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, (ReversePath, 
     )(input)
 }
 
-fn _forward_path<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, ForwardPath> {
+fn _forward_path<P: Utf8Policy>(input: &[u8]) -> NomResult<'_, ForwardPath> {
     alt((
         map(tag_no_case("<postmaster>"), |_| {
             ForwardPath::PostMaster(None)
@@ -531,7 +530,7 @@ fn _forward_path<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, ForwardPath> {
 /// assert_eq!(p.to_string(), "<bob@example.org>");
 /// assert_eq!(params, [Param::new("NOTIFY", Some("NEVER")).unwrap()]);
 /// ```
-pub fn rcpt_command<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, (ForwardPath, Vec<Param>)> {
+pub fn rcpt_command<P: Utf8Policy>(input: &[u8]) -> NomResult<'_, (ForwardPath, Vec<Param>)> {
     map(
         delimited(
             tag_no_case("RCPT TO:"),
@@ -555,7 +554,7 @@ pub fn rset_command(input: &[u8]) -> NomResult<'_, ()> {
     map(tag_no_case("RSET\r\n"), |_| ())(input)
 }
 
-fn _smtp_string<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, SMTPString> {
+fn _smtp_string<P: Utf8Policy>(input: &[u8]) -> NomResult<'_, SMTPString> {
     alt((
         map(atom::<P>, |a| SMTPString(str::from_utf8(a).unwrap().into())),
         map(quoted_string::<P>, |qs| SMTPString(qs.into())),
@@ -563,7 +562,7 @@ fn _smtp_string<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, SMTPString> {
 }
 
 /// Parse an SMTP NOOP command.
-pub fn noop_command<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, Option<SMTPString>> {
+pub fn noop_command<P: Utf8Policy>(input: &[u8]) -> NomResult<'_, Option<SMTPString>> {
     delimited(
         tag_no_case("NOOP"),
         opt(preceded(tag(" "), _smtp_string::<P>)),
@@ -577,17 +576,17 @@ pub fn quit_command(input: &[u8]) -> NomResult<'_, ()> {
 }
 
 /// Parse an SMTP VRFY command.
-pub fn vrfy_command<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, SMTPString> {
+pub fn vrfy_command<P: Utf8Policy>(input: &[u8]) -> NomResult<'_, SMTPString> {
     delimited(tag_no_case("VRFY "), _smtp_string::<P>, crlf)(input)
 }
 
 /// Parse an SMTP EXPN command.
-pub fn expn_command<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, SMTPString> {
+pub fn expn_command<P: Utf8Policy>(input: &[u8]) -> NomResult<'_, SMTPString> {
     delimited(tag_no_case("EXPN "), _smtp_string::<P>, crlf)(input)
 }
 
 /// Parse an SMTP HELP command.
-pub fn help_command<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, Option<SMTPString>> {
+pub fn help_command<P: Utf8Policy>(input: &[u8]) -> NomResult<'_, Option<SMTPString>> {
     delimited(
         tag_no_case("HELP"),
         opt(preceded(tag(" "), _smtp_string::<P>)),
@@ -616,7 +615,7 @@ pub enum Command {
 }
 
 /// Parse any basic SMTP command.
-pub fn command<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, Command> {
+pub fn command<P: Utf8Policy>(input: &[u8]) -> NomResult<'_, Command> {
     alt((
         map(ehlo_command::<P>, Command::EHLO),
         map(helo_command::<P>, Command::HELO),
@@ -644,8 +643,8 @@ pub fn command<P: UTF8Policy>(input: &[u8]) -> NomResult<'_, Command> {
 /// assert!(validate_address::<Intl>(b"bob@[aoeu:192.0.2.1]"));
 /// assert!(!validate_address::<Intl>(b""));
 /// ```
-pub fn validate_address<P: UTF8Policy>(i: &[u8]) -> bool {
-    exact!(i, mailbox::<P>).is_ok()
+pub fn validate_address<P: Utf8Policy>(i: &[u8]) -> bool {
+    all_consuming(mailbox::<P>)(i).is_ok()
 }
 
 /// Parse a STARTTLS command from RFC 3207
@@ -665,7 +664,7 @@ pub fn bdat_command(input: &[u8]) -> NomResult<'_, (u64, bool)> {
 }
 
 fn bdat_chunk_size(input: &[u8]) -> NomResult<'_, u64> {
-    map_res(take_while_m_n(1, 20, is_digit), |s| {
+    map_res(take_while_m_n(1, 20, |c: u8| c.is_ascii_digit()), |s| {
         std::str::from_utf8(s).unwrap().parse()
     })(input)
 }

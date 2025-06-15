@@ -13,6 +13,7 @@ use nom::bytes::complete::tag_no_case;
 use nom::combinator::map;
 use nom::combinator::opt;
 use nom::multi::many1;
+use nom::multi::separated_list1;
 use nom::sequence::delimited;
 use nom::sequence::preceded;
 use nom::sequence::separated_pair;
@@ -58,7 +59,7 @@ fn param(input: &[u8]) -> NomResult<'_, Param> {
 /// `[UNAVAILABLE]` is translated to `None`. No other validation is
 /// done.
 pub fn xforward_params(input: &[u8]) -> NomResult<'_, Vec<Param>> {
-    fold_prefix0(
+    separated_list1(
         preceded(opt(many1(wsp)), param),
         preceded(many1(wsp), param),
     )(input)

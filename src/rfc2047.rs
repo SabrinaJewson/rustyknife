@@ -9,6 +9,7 @@ use encoding_rs::{Encoding, UTF_8}; // TODO: was ASCII
 use nom::branch::alt;
 use nom::bytes::complete::tag;
 use nom::bytes::complete::take_while1;
+use nom::combinator::all_consuming;
 use nom::combinator::map;
 use nom::combinator::opt;
 use nom::multi::many0;
@@ -19,11 +20,11 @@ use nom::sequence::tuple;
 use std::borrow::Cow;
 
 fn token(input: &[u8]) -> NomResult<'_, &[u8]> {
-    take_while1(|c| (33..=126).contains(&c) && !b"()<>@,;:\\\"/[]?.=".contains(&c))(input)
+    take_while1(|c: u8| c.is_ascii_graphic() && !b"()<>@,;:\\\"/[]?.=".contains(&c))(input)
 }
 
 fn encoded_text(input: &[u8]) -> NomResult<'_, &[u8]> {
-    take_while1(|c| matches!(c, 33..=62 | 64..=126))(input)
+    take_while1(|c: u8| c.is_ascii_graphic() && c != b'?')(input)
 }
 
 fn _qp_encoded_text(input: &[u8]) -> NomResult<'_, Vec<u8>> {
@@ -36,41 +37,16 @@ fn _qp_encoded_text(input: &[u8]) -> NomResult<'_, Vec<u8>> {
 
 // Decode the modified quoted-printable as defined by this RFC.
 fn decode_qp(input: &[u8]) -> Option<Vec<u8>> {
-    exact!(input, _qp_encoded_text).ok().map(|(_, o)| o)
+    all_consuming(_qp_encoded_text)(input).ok().map(|(_, o)| o)
 }
 
 // Undoes the quoted-printable or base64 encoding.
 fn decode_text(encoding: &[u8], text: &[u8]) -> Option<Vec<u8>> {
-    match encoding.first().map(u8::to_ascii_lowercase) {
-        Some(b'q') => decode_qp(text),
-        Some(b'b') => base64::engine::general_purpose::STANDARD.decode(text).ok(),
+    match encoding {
+        [b'q' | b'Q'] => decode_qp(text),
+        [b'b' | b'B'] => base64::engine::general_purpose::STANDARD.decode(text).ok(),
         _ => None,
     }
-}
-
-fn _encoded_word(input: &[u8]) -> NomResult<'_, (Cow<'_, str>, Vec<u8>)> {
-    map(
-        tuple((
-            preceded(tag("=?"), token),
-            opt(preceded(tag("*"), token)),
-            delimited(tag("?"), token, tag("?")),
-            terminated(encoded_text, tag("?=")),
-        )),
-        |(charset, _lang, encoding, text)| {
-            (
-                charset::decode_ascii(charset),
-                decode_text(encoding, text).unwrap_or_else(|| text.to_vec()),
-            )
-        },
-    )(input)
-}
-
-fn decode_charset((charset, bytes): (Cow<'_, str>, Vec<u8>)) -> String {
-    Encoding::for_label(charset.as_bytes())
-        .unwrap_or(UTF_8)
-        .decode_without_bom_handling(&bytes)
-        .0
-        .to_string()
 }
 
 /// Decode an encoded word.
@@ -80,8 +56,35 @@ fn decode_charset((charset, bytes): (Cow<'_, str>, Vec<u8>)) -> String {
 /// use rustyknife::rfc2047::encoded_word;
 ///
 /// let (_, decoded) = encoded_word(b"=?x-sjis?B?lEWWQI7Kg4GM9ZTygs6CtSiPzik=?=").unwrap();
-/// assert_eq!(decoded, "忍法写メ光飛ばし(笑)");
+/// assert_eq!(decoded.decode(), "忍法写メ光飛ばし(笑)");
 /// ```
-pub fn encoded_word(input: &[u8]) -> NomResult<'_, String> {
-    map(_encoded_word, decode_charset)(input)
+pub fn encoded_word(input: &[u8]) -> NomResult<'_, EncodedWord<'_>> {
+    map(
+        tuple((
+            preceded(tag("=?"), token),
+            opt(preceded(tag("*"), token)),
+            delimited(tag("?"), token, tag("?")),
+            terminated(encoded_text, tag("?=")),
+        )),
+        |(charset, _lang, encoding, text)| EncodedWord {
+            charset: charset::decode_ascii(charset),
+            bytes: decode_text(encoding, text).unwrap_or_else(|| text.to_vec()),
+        },
+    )(input)
+}
+
+/// An encoded word. Constructed by [`encoded_word`].
+#[derive(Debug)]
+pub struct EncodedWord<'a> {
+    charset: Cow<'a, str>,
+    bytes: Vec<u8>,
+}
+
+impl EncodedWord<'_> {
+    pub fn decode(&self) -> Cow<'_, str> {
+        Encoding::for_label(self.charset.as_bytes())
+            .unwrap_or(UTF_8)
+            .decode_without_bom_handling(&self.bytes)
+            .0
+    }
 }

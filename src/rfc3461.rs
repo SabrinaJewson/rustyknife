@@ -9,11 +9,12 @@ use nom::branch::alt;
 use nom::bytes::complete::tag;
 use nom::bytes::complete::tag_no_case;
 use nom::bytes::complete::take;
-use nom::character::is_hex_digit;
+use nom::combinator::all_consuming;
 use nom::combinator::map;
 use nom::combinator::map_res;
 use nom::combinator::verify;
 use nom::multi::many0;
+use nom::multi::separated_list1;
 use nom::sequence::preceded;
 use nom::sequence::separated_pair;
 use std::borrow::Cow;
@@ -21,7 +22,7 @@ use std::str;
 
 pub(crate) fn hexpair(input: &[u8]) -> NomResult<'_, u8> {
     map_res(
-        verify(take(2usize), |c: &[u8]| c.iter().cloned().all(is_hex_digit)),
+        verify(take(2usize), |c: &[u8]| c.iter().all(u8::is_ascii_hexdigit)),
         |x| u8::from_str_radix(str::from_utf8(x).unwrap(), 16),
     )(input)
 }
@@ -131,7 +132,7 @@ pub fn dsn_mail_params<'a>(
                 if value.len() > 100 {
                     return Err("ENVID over 100 bytes");
                 }
-                if let Ok((_, parsed)) = exact!(value, _printable_xtext) {
+                if let Ok((_, parsed)) = all_consuming(_printable_xtext)(value) {
                     envid_val = Some(decode_ascii(&parsed).into());
                 } else {
                     return Err("Invalid ENVID");
@@ -195,9 +196,6 @@ pub fn dsn_notify(input: &str) -> Result<(&str, Notify), nom::Err<()>> {
             on_failure: false,
             delay: false,
         }),
-        map(
-            fold_prefix0(notify_item, preceded(tag(","), notify_item)),
-            convert_notify_list,
-        ),
+        map(separated_list1(tag(","), notify_item), convert_notify_list),
     ))(input)
 }

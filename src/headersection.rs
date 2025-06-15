@@ -42,7 +42,7 @@ fn fws(input: &[u8]) -> NomResult<'_, Cow<'_, str>> {
 }
 
 fn ofws(input: &[u8]) -> NomResult<'_, Cow<'_, str>> {
-    map(opt(fws), |i| i.unwrap_or_else(|| Cow::from("")))(input)
+    map(opt(fws), |i| i.unwrap_or_default())(input)
 }
 
 fn sp(input: &[u8]) -> NomResult<'_, &[u8]> {

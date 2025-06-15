@@ -3,8 +3,7 @@
 // #![warn(missing_docs)]
 #![allow(clippy::result_unit_err)]
 
-#[macro_use]
-pub extern crate nom;
+pub use nom;
 
 /// Types used for varying parser behaviour.
 pub mod behaviour {

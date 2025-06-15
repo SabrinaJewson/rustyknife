@@ -18,7 +18,6 @@ use nom::bytes::complete::tag;
 use nom::bytes::complete::tag_no_case;
 use nom::bytes::complete::take_while1;
 use nom::bytes::complete::take_while_m_n;
-use nom::character::is_digit;
 use nom::combinator::map;
 use nom::combinator::opt;
 use nom::combinator::recognize;
@@ -29,7 +28,6 @@ use nom::sequence::pair;
 use nom::sequence::preceded;
 use nom::sequence::separated_pair;
 use nom::sequence::terminated;
-use nom::sequence::tuple;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt::Display;
@@ -120,7 +118,10 @@ fn other_sections(input: &[u8]) -> NomResult<'_, u32> {
     map(
         preceded(
             tag("*"),
-            verify(take_while_m_n(1, 8, is_digit), |x: &[u8]| x[0] != b'0'),
+            verify(
+                take_while_m_n(1, 8, |c: u8| c.is_ascii_digit()),
+                |x: &[u8]| x[0] != b'0',
+            ),
         ),
         |s| str::from_utf8(s).unwrap().parse().unwrap(),
     )(input)
@@ -414,6 +415,7 @@ impl Display for ContentTransferEncoding {
 }
 
 use self::ContentTransferEncoding as CTE;
+use nom::sequence::tuple;
 
 /// Parse a MIME `"Content-Transfer-Encoding"` header.
 ///

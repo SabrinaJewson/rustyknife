@@ -16,7 +16,7 @@ pub(crate) fn wsp(input: &[u8]) -> NomResult<'_, u8> {
 }
 
 pub fn vchar(input: &[u8]) -> NomResult<'_, char> {
-    map(take1_filter(|c| (0x21..=0x7e).contains(&c)), char::from)(input)
+    map(take1_filter(|c| c.is_ascii_graphic()), char::from)(input)
 }
 
 pub fn crlf(input: &[u8]) -> NomResult<'_, &[u8]> {
